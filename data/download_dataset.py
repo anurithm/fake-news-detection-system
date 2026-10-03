@@ -1,37 +1,61 @@
-import urllib.request
 import os
-import pandas as pd
 from pathlib import Path
+import pandas as pd
 
 def download_csv():
-    url = "https://raw.githubusercontent.com/lutzhamel/fake-news/master/data/fake_or_real_news.csv"
     data_dir = Path(__file__).parent
     output_path = data_dir / "dataset.csv"
+    sample_path = data_dir / "sample_data.csv"
     
-    print(f"Downloading dataset from {url}...")
+    print("Initiating WELFake Dataset extraction...")
+    
     try:
-        urllib.request.urlretrieve(url, output_path)
-    except Exception as e:
-        print(f"Failed to download with urllib: {e}")
-        print("Attempting with curl...")
-        os.system(f"curl -L {url} -o {output_path}")
+        from datasets import load_dataset
+    except ImportError:
+        print("datasets library not found. Installing...")
+        os.system("pip install datasets")
+        from datasets import load_dataset
 
-    print("Download complete. Verifying schema...")
-    df = pd.read_csv(output_path)
+    # Load WELFake from HuggingFace
+    print("Loading davanstrien/WELFake from HuggingFace...")
+    ds = load_dataset("davanstrien/WELFake", split="train")
+    df = ds.to_pandas()
     
-    print("\nOriginal columns:", df.columns.tolist())
+    # Map classes explicitly 
+    # WELFake has label: 0=REAL, 1=FAKE. 
+    df["label"] = df["label"].map({0: "REAL", 1: "FAKE"})
+    df = df[["title", "text", "label"]]
     
-    # The dataset has Unnamed: 0, title, text, label.
-    if "Unnamed: 0" in df.columns:
-        df = df.drop(columns=["Unnamed: 0"])
+    dfs_to_concat = [df]
     
-    print("\nVerified columns:", df.columns.tolist())
-    print("\nClass distribution:")
-    print(df["label"].value_counts())
-    print(f"\nTotal samples: {len(df)}")
+    # Combine with local sample_data to inject niche domains perfectly
+    if sample_path.exists():
+        print(f"Loading local augmented domains from {sample_path}...")
+        df_sample = pd.read_csv(sample_path)
+        if all(c in df_sample.columns for c in ["title", "text", "label"]):
+            df_sample["label"] = df_sample["label"].str.upper()
+            dfs_to_concat.append(df_sample[["title", "text", "label"]])
+            
+    combined_df = pd.concat(dfs_to_concat, ignore_index=True)
     
-    # Save a clean version
-    df.to_csv(output_path, index=False)
+    # Final data cleaning
+    combined_df = combined_df.dropna(subset=["text", "label"])
+    empty_mask = combined_df["text"].str.strip() == ""
+    combined_df = combined_df[~empty_mask]
+    
+    n_dups = combined_df.duplicated(subset=["text"]).sum()
+    if n_dups > 0:
+        print(f"Dropping {n_dups} duplicate texts...")
+        combined_df = combined_df.drop_duplicates(subset=["text"])
+        
+    combined_df = combined_df.sample(frac=1, random_state=42).reset_index(drop=True)
+    
+    print("\nFinal Dataset schema verified:", combined_df.columns.tolist())
+    print("Class distribution:")
+    print(combined_df["label"].value_counts())
+    print(f"Total clean samples: {len(combined_df)}")
+    
+    combined_df.to_csv(output_path, index=False)
     print(f"\nDataset saved successfully at {output_path}")
 
 if __name__ == "__main__":

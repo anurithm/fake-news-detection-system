@@ -7,7 +7,7 @@ from duckduckgo_search import DDGS
 
 logger = logging.getLogger(__name__)
 
-def search_live_evidence(query: str, max_results: int = 5) -> List[Dict]:
+def search_live_evidence(query: str, max_results: int = 8) -> List[Dict]:
     """
     Searches DuckDuckGo and Google News RSS for live evidence on a query.
     Returns a unified list of sources.

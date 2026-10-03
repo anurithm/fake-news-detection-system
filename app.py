@@ -287,23 +287,44 @@ elif page == "🔎 Detect News":
                     cleaned = clean_text(combined)
                     stats   = get_text_stats(combined, cleaned)
 
-                    # ── Result card ────────────────────────────────────────
-                    card_cls = "result-real" if prediction == "REAL" else "result-fake"
-                    emoji    = "✅" if prediction == "REAL" else "❌"
-                    label    = "REAL NEWS" if prediction == "REAL" else "FAKE NEWS"
+                    # Instead of running the ML as the primary source of truth, run evidence pipeline first
+                    from src.evidence_verifier import run_verification_pipeline
+                    with st.spinner("Searching for relevant live evidence..."):
+                        @st.cache_data(show_spinner=False, ttl=300)
+                        def get_evidence(text: str):
+                            return run_verification_pipeline(text)
+                        ev_result = get_evidence(combined)
+
+                    # ── Evaluate the Final Verdict ─────────────────────────
+                    ev_status = ev_result["status"] # VERIFIED, CONTRADICTED, MIXED, UNVERIFIED
+                    
+                    if ev_status == "VERIFIED":
+                        final_decision = "REAL"
+                    elif ev_status == "CONTRADICTED":
+                        final_decision = "FAKE"
+                    else:
+                        final_decision = "UNVERIFIED"
+
+                    card_cls = "result-real" if final_decision == "REAL" else "result-fake" if final_decision == "FAKE" else "result-unverified"
+                    emoji    = "✅" if final_decision == "REAL" else "❌" if final_decision == "FAKE" else "⚠️"
+                    label    = "REAL NEWS" if final_decision == "REAL" else "FAKE NEWS" if final_decision == "FAKE" else "UNVERIFIED"
+                    
                     st.markdown(
                         f'<div class="result-card {card_cls}">'
-                        f'<h2>{emoji} Model Prediction: {label}</h2>'
-                        f'<p>Confidence: <strong>{confidence * 100:.2f}%</strong></p>'
-                        f'<p>Model used: <strong>{model_name}</strong></p>'
+                        f'<h2>{emoji} Final Verdict: {label}</h2>'
+                        f'<p>This result is dynamically driven by real-time evidence retrieval.</p>'
                         f"</div>",
                         unsafe_allow_html=True,
                     )
 
+                    # Secondary Context: ML Prediction
+                    st.markdown("#### ⚙️ Secondary ML Signal")
+                    st.info(f"The underlying local SVM evaluated this text pattern as **{prediction}** ({confidence * 100:.2f}% match to training bias).")
+
                     # Probabilities
                     p_col1, p_col2 = st.columns(2)
-                    p_col1.metric("REAL probability", f"{label_probs.get('REAL', 0)*100:.2f}%")
-                    p_col2.metric("FAKE probability", f"{label_probs.get('FAKE', 0)*100:.2f}%")
+                    p_col1.metric("SVM REAL probability", f"{label_probs.get('REAL', 0)*100:.2f}%")
+                    p_col2.metric("SVM FAKE probability", f"{label_probs.get('FAKE', 0)*100:.2f}%")
 
                     # Text statistics
                     st.markdown("#### 📊 Text Statistics")
@@ -312,17 +333,8 @@ elif page == "🔎 Detect News":
                     s_col2.metric("Sentence Count", stats["sentence_count"])
                     s_col3.metric("Character Count", stats["char_count"])
 
-                    # Disclaimer
-                    st.markdown(
-                        '<div class="disclaimer-box">'
-                        "ℹ️ This prediction reflects patterns learned from the training dataset "
-                        "and is <strong>not</strong> independent factual verification."
-                        "</div>",
-                        unsafe_allow_html=True,
-                    )
-
                     # Persist to history
-                    save_prediction(combined, prediction, confidence, model_name)
+                    save_prediction(combined, final_decision, confidence, "Evidence Pipeline")
 
                 except FileNotFoundError as e:
                     st.error(f"Model file missing: {e}")
@@ -333,59 +345,62 @@ elif page == "🔎 Detect News":
 
             # ── Evidence Verification Section ─────────────────────────────
             st.divider()
-            st.markdown("## 🔎 Evidence-Based Verification")
+            st.markdown("## 🔎 Evidence-Based Verification Details")
             
-            # Use columns to align the button nicely
-            ev_btn_col1, ev_btn_col2, _ = st.columns([2, 1, 3])
-            if ev_btn_col1.button("Verify with Live Evidence", use_container_width=True, type="secondary"):
-                with st.spinner("Searching for relevant evidence..."):
-                    try:
-                        from src.evidence_verifier import run_verification_pipeline
+            try:
+                st.markdown(f"**Verification Status:** `{ev_result['status']}`")
+                st.markdown(f"**Evidence Strength:** `{ev_result['strength']}`")
+                st.markdown(f"**Main Claim:** {ev_result['claim']}")
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("### Supporting Evidence")
+                    if ev_result['supporting']:
+                        for e in ev_result['supporting']:
+                            st.markdown(f"**Source:** {e['source']}")
+                            st.markdown(f"**Title:** {e['title']}")
+                            st.markdown(f"**Date:** {e.get('date', 'Unknown')}")
+                            st.markdown(f"*Relevant excerpt:* {e['snippet'][:150]}...")
+                            st.markdown(f"[Open source]({e['url']})")
+                            st.divider()
+                    else:
+                        st.write("No significant supporting evidence found.")
                         
-                        # Cache the backend call at the Streamlit layer to prevent duplicate requests
-                        @st.cache_data(show_spinner=False, ttl=300)
-                        def get_evidence(text: str):
-                            return run_verification_pipeline(text)
-                            
-                        ev_result = get_evidence(combined)
+                with c2:
+                    st.markdown("### Conflicting Evidence")
+                    if ev_result['conflicting']:
+                        for e in ev_result['conflicting']:
+                            st.markdown(f"**Source:** {e['source']}")
+                            st.markdown(f"**Title:** {e['title']}")
+                            st.markdown(f"**Date:** {e.get('date', 'Unknown')}")
+                            st.markdown(f"*Relevant excerpt:* {e['snippet'][:150]}...")
+                            st.markdown(f"[Open source]({e['url']})")
+                            st.divider()
+                    else:
+                        st.write("No significant conflicting evidence found.")
                         
-                        st.markdown(f"**Verification Status:** `{ev_result['status']}`")
-                        st.markdown(f"**Evidence Strength:** `{ev_result['strength']}`")
-                        st.markdown(f"**Main Claim:** {ev_result['claim']}")
-                        
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            st.markdown("### Supporting Evidence")
-                            if ev_result['supporting']:
-                                for e in ev_result['supporting']:
-                                    st.markdown(f"**Source:** {e['source']}")
-                                    st.markdown(f"**Title:** {e['title']}")
-                                    st.markdown(f"**Date:** {e.get('date', 'Unknown')}")
-                                    st.markdown(f"*Relevant excerpt:* {e['snippet'][:150]}...")
-                                    st.markdown(f"[Open source]({e['url']})")
-                                    st.divider()
-                            else:
-                                st.write("No significant supporting evidence found.")
-                                
-                        with c2:
-                            st.markdown("### Conflicting Evidence")
-                            if ev_result['conflicting']:
-                                for e in ev_result['conflicting']:
-                                    st.markdown(f"**Source:** {e['source']}")
-                                    st.markdown(f"**Title:** {e['title']}")
-                                    st.markdown(f"**Date:** {e.get('date', 'Unknown')}")
-                                    st.markdown(f"*Relevant excerpt:* {e['snippet'][:150]}...")
-                                    st.markdown(f"[Open source]({e['url']})")
-                                    st.divider()
-                            else:
-                                st.write("No significant conflicting evidence found.")
-                                
-                        st.markdown("### Verification Explanation")
-                        st.info(ev_result['explanation'])
-                        
-                    except Exception as e:
-                        st.error(f"Live evidence verification is temporarily unavailable. Error: {e}")
-                        st.info("The ML classification is still available.")
+                st.markdown("### Verification Explanation")
+                st.info(ev_result['explanation'])
+                
+                st.divider()
+                st.markdown("## 🤖 AI Explanation")
+                
+                with st.spinner("Generating AI explanation..."):
+                    from src.ollama_client import get_ai_explanation
+                    ai_explanation = get_ai_explanation(
+                        news_text=combined,
+                        prediction=prediction,
+                        confidence=confidence,
+                        evidence_result=ev_result
+                    )
+                    if ai_explanation:
+                        st.write(ai_explanation)
+                    else:
+                        st.warning("Ollama explanation unavailable. Existing ML and evidence verification results are still available.")
+                
+            except Exception as e:
+                st.error(f"Live evidence verification is temporarily unavailable. Error: {e}")
+                st.info("The ML classification is still available.")
 
 
 # ═════════════════════════════════════════════════════════════════════════════

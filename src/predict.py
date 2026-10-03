@@ -139,13 +139,16 @@ def predict_text(
         confidence = label_probs.get(prediction, max(proba))
     else:
         # Fallback: decision_function scaled to [0,1] via sigmoid
+        prob_real = 0.5
         if hasattr(model, "decision_function"):
             score = model.decision_function(X)[0]
-            confidence = float(1 / (1 + np.exp(-score)))
+            prob_real = float(1 / (1 + np.exp(-score)))
         label_probs = {
-            prediction: confidence,
-            ("REAL" if prediction == "FAKE" else "FAKE"): round(1 - confidence, 4),
+            "REAL": round(prob_real, 4),
+            "FAKE": round(1 - prob_real, 4),
         }
+        # Confidence = probability of the predicted class
+        confidence = label_probs.get(prediction, 0.5)
 
     return {
         "prediction": prediction,
