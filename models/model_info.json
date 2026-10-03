@@ -1,0 +1,11 @@
+{
+  "best_model_name": "Linear SVM",
+  "best_model_f1": 0.9707,
+  "dataset_name": "dataset.csv",
+  "total_samples": 62733,
+  "real_count": 34629,
+  "fake_count": 28104,
+  "vocab_size": 50000,
+  "train_size": 50186,
+  "test_size": 12547
+}
