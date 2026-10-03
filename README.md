@@ -2,6 +2,9 @@
 
 An advanced multi-layered application that evaluates whether news claims are reliable, leveraging live web-evidence verification as the primary truth signal and utilizing local Machine Learning statistical models as secondary signals.
 
+## LIVE DEMO 📎
+https://fake-news-detection-system-3tu5r8wmh7omda43nbtmjv.streamlit.app/
+
 ## Project Overview
 This project targets the rapid spread of online misinformation by applying an **Evidence-First** evaluation pipeline. Instead of blindly trusting a static machine learning model (which can inherit domain biases), the system:
 1. Extracts the primary factual claim dynamically using a local LLM.
